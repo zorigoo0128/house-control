@@ -3,7 +3,7 @@
 What changed in each release of House Control. The Mac app is on
 [Releases](https://github.com/0xProbabillity/house-control/releases); the iPhone app is on TestFlight.
 
-## Unreleased
+## 1.1.1 — 2026-10-18
 
 ### Mac
 
