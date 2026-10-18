@@ -154,6 +154,9 @@ Decoration only. Every piece has `type`, `pos` (`[x, z]` of its centre) and an o
 
 In both maps the key `"*"` applies to every device, and a device's own entry overrides it.
 
+The home editor edits all of this in a scene's form, and **Capture what the preview shows** writes the look
+of the 3D preview — tap a lamp or an AC in it to turn it on or off first — into the scene.
+
 ## Linking real devices
 
 A light or an AC becomes real when it is linked to a device of a connected platform. The editor fills the link

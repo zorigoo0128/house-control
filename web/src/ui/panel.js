@@ -1,7 +1,7 @@
 // The control panel that lives in the menu bar popover: header, scenes, rooms,
 // device tiles and the detail sheets for a light or an AC.
 import * as THREE from 'three';
-import { h, clamp, createSlider, createColorPad, openMenu } from './dom.js';
+import { h, clamp, createSlider, createColorPad, openMenu, SWATCHES, TEMP_GRADIENT, DIM_GRADIENT, KELVIN_GRADIENT } from './dom.js';
 import { icon } from './icons.js';
 import { lightColor } from '../three/lights.js';
 import { MODE_COLORS } from '../three/ac.js';
@@ -11,11 +11,6 @@ import { haptic, isPhone } from '../bridge.js';
 const MODE_LABEL = { cool: 'Cool', heat: 'Heat', dry: 'Dry', fan: 'Fan', auto: 'Auto' };
 const FAN_LABEL = { auto: 'Auto', low: 'Low', medium: 'Medium', high: 'High', turbo: 'Turbo' };
 const SWING_LABEL = { swing: 'Swing', l1: 'L1', l2: 'L2', l3: 'L3', l4: 'L4', l5: 'L5', off: 'Off' };
-const SWATCHES = ['#ff5a4f', '#ff9a3c', '#ffd84a', '#5fe08a', '#42d6e8', '#4f8dff', '#8b5cff', '#ff5fc4'];
-
-const TEMP_GRADIENT = 'linear-gradient(90deg, #2f7df6 0%, #58b4f5 34%, #f3e2c0 62%, #f6a54a 82%, #f0762c 100%)';
-const DIM_GRADIENT = 'linear-gradient(90deg, #4a4f5e 0%, #b9a98c 45%, #ffe2b0 100%)';
-const KELVIN_GRADIENT = 'linear-gradient(90deg, #ff9438 0%, #ffbd7a 30%, #ffe2c2 62%, #dfe9ff 100%)';
 
 const NAVY = new THREE.Color('#17274f');
 const tmp = new THREE.Color();

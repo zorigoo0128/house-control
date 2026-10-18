@@ -11,6 +11,17 @@ What changed in each release of House Control. The Mac app is on
   panel, the island, the editor or the AI Access window. In the editor's text fields, ⌘C/⌘V and the Edit menu
   still work.
 
+### Editor
+
+- **Edit a scene fully.** A scene no longer only switches things on and off: each light takes a brightness,
+  a colour temperature and a colour, and each AC a target, a mode and a fan, chosen right in the scene's form.
+- **Light the home, then capture it.** The editor's 3D preview is now tappable — tap a lamp or an AC to turn
+  it on or off — and **Capture what the preview shows** writes that whole look into the scene being edited.
+
+### Fixed
+
+- A scene the AI wrote could not use the `table` icon that the editor and the manual already offered.
+
 ## 1.1.0 — 2026-10-18
 
 ### Mac

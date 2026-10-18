@@ -6,11 +6,11 @@ import './editor.css';
 import { normalize, loadRawConfig, LIGHT_KINDS, FLOOR_KINDS, isLinked } from '../config.js';
 import { createWorld } from '../three/world.js';
 import { FURNITURE_TYPES, footprint } from '../three/furniture.js';
-import { h, clamp } from '../ui/dom.js';
+import { h, clamp, createSlider, SWATCHES, DIM_GRADIENT, TEMP_GRADIENT, KELVIN_GRADIENT } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { isNative, isPhone, call, post, haptic, incoming } from '../bridge.js';
 import { createConnections } from './connections.js';
-import { SCENE_ICONS } from '../scene-rules.js';
+import { SCENE_ICONS, AC_MODES, AC_FANS, rule, setRule, capture } from '../scene-rules.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const sv = (tag, attrs = {}, ...kids) => {
@@ -45,7 +45,6 @@ export async function bootEditor(root) {
   let dirty = false;
   let world = null;
   let phone = null; // the iPhone's layout and gestures, set up by buildPhoneLayout()
-  let previewLights = true;
   const undo = [];
   const redo = [];
   const tuya = {
@@ -82,7 +81,12 @@ export async function bootEditor(root) {
   const plan = sv('svg', { class: 'plan', tabindex: 0 });
   const inspector = h('div.inspector');
   const previewHost = h('div.preview');
-  const previewToggle = h('button.chip', { onclick: () => { previewLights = !previewLights; schedulePreview(0); } });
+  const previewToggle = h('button.chip', { onclick: () => {
+    const devices = [...Object.values(previewState.lights), ...Object.values(previewState.acs)];
+    const next = !devices.some((d) => d.on);
+    for (const d of devices) d.on = next;
+    schedulePreview(0);
+  } });
 
   if (isPhone) buildPhoneLayout();
   else root.replaceChildren(h('div.editor',
@@ -133,6 +137,8 @@ export async function bootEditor(root) {
   function select(next) {
     sel = next;
     lastSnapshotKey = null;
+    // Opening a scene shows it: the preview becomes what the scene does, ready to adjust.
+    if (next.kind === 'scene') { loadSceneIntoPreview(doc.scenes[next.index]); schedulePreview(0); }
     renderSidebar();
     renderPlan();
     renderInspector();
@@ -165,11 +171,46 @@ export async function bootEditor(root) {
     if (isPhone) phone.refresh();
   }
 
-  function previewStore(cfg) {
-    const state = { lights: {}, acs: {} };
-    for (const l of cfg.lights) state.lights[l.id] = { on: previewLights, brightness: 0.85, temp: 3200, color: l.color || null };
-    for (const a of cfg.acs) state.acs[a.id] = { on: previewLights, mode: 'cool', fan: 'auto', swing: 'swing', sleep: false, target: 23 };
-    return { state, on: () => () => {} };
+  // The home the 3D preview shows: a scratch state you nudge by tapping a lamp or an AC,
+  // and that "capture" writes into the scene being edited. It outlives a rebuild, so you
+  // can tap a lamp and then move a slider without losing the tap.
+  const previewState = { lights: {}, acs: {} };
+  const anyOn = () => [...Object.values(previewState.lights), ...Object.values(previewState.acs)].some((d) => d.on);
+
+  /** Adds a device the preview has not seen yet, and drops the ones the plan has lost. */
+  function seedPreview() {
+    if (!valid) return;
+    for (const l of valid.lights) previewState.lights[l.id] ||= { on: true, brightness: 0.85, temp: 3200, color: l.color || null };
+    for (const a of valid.acs) previewState.acs[a.id] ||= { on: true, mode: 'cool', fan: 'auto', swing: 'swing', sleep: false, target: 23 };
+    for (const id of Object.keys(previewState.lights)) if (!valid.lights.some((l) => l.id === id)) delete previewState.lights[id];
+    for (const id of Object.keys(previewState.acs)) if (!valid.acs.some((a) => a.id === id)) delete previewState.acs[id];
+  }
+
+  /** Shows a scene: what the preview holds becomes what the scene does, "*" taken into account. */
+  function loadSceneIntoPreview(scene) {
+    if (!valid) return;
+    for (const l of valid.lights) {
+      const r = rule(scene, 'light', l.id);
+      previewState.lights[l.id] = {
+        on: r.on ?? false, brightness: r.brightness ?? 0.85, temp: r.temp ?? 3200, color: r.color ?? l.color ?? null,
+      };
+    }
+    for (const a of valid.acs) {
+      const r = rule(scene, 'ac', a.id);
+      previewState.acs[a.id] = {
+        on: r.on ?? false, mode: r.mode ?? 'cool', fan: r.fan ?? 'auto', swing: 'swing', sleep: false, target: r.target ?? 23,
+      };
+    }
+  }
+
+  // What createWorld talks to here: no storage, no network, just the scratch state above.
+  function previewStore() {
+    const handlers = new Set();
+    return {
+      state: previewState,
+      on(fn) { handlers.add(fn); return () => handlers.delete(fn); },
+      emit(change) { for (const fn of handlers) fn(change); },
+    };
   }
 
   let previewTimer = 0;
@@ -179,7 +220,9 @@ export async function bootEditor(root) {
   }
 
   function buildPreview() {
-    previewToggle.replaceChildren(icon(previewLights ? 'bright' : 'moon', 14), previewLights ? 'Lights on' : 'Lights off');
+    seedPreview();
+    const lit = anyOn();
+    previewToggle.replaceChildren(icon(lit ? 'bright' : 'moon', 14), lit ? 'Lights on' : 'Lights off');
     if (!valid) return;
     if (isPhone && !phone.show3D) { world?.dispose(); world = null; previewHost.replaceChildren(); return; }
     world?.dispose();
@@ -187,12 +230,16 @@ export async function bootEditor(root) {
     const canvas = h('canvas');
     previewHost.replaceChildren(canvas);
     try {
-      world = createWorld(canvas, valid, previewStore(valid), {
+      const store = previewStore();
+      world = createWorld(canvas, valid, store, {
         onHover() {},
         onPick(t) {
           if (!t) return;
-          const index = doc[KEYS[t.kind]].findIndex((x) => x.id === t.id);
-          if (index >= 0) select({ kind: t.kind, index });
+          const device = (t.kind === 'light' ? previewState.lights : previewState.acs)[t.id];
+          if (!device) return;
+          device.on = !device.on;
+          haptic('tick');
+          store.emit({ type: t.kind, id: t.id });
         },
       });
       world.setInsets(isPhone ? 20 : 6, isPhone ? 20 : 6);
@@ -202,6 +249,23 @@ export async function bootEditor(root) {
     } catch (e) {
       previewHost.replaceChildren(h('div.preview-error', String(e.message || e)));
     }
+  }
+
+  /** Writes what the preview now shows into the selected scene, as its lights and ACs. */
+  function capturePreview() {
+    const scene = sel.kind === 'scene' ? doc.scenes[sel.index] : null;
+    if (!scene) return;
+    seedPreview();
+    if (!Object.keys(previewState.lights).length && !Object.keys(previewState.acs).length) {
+      toast('Nothing in the preview to capture — check the plan first', true);
+      return;
+    }
+    snapshot();
+    const captured = capture(previewState);
+    scene.lights = captured.lights;
+    scene.acs = captured.acs;
+    touch();
+    toast('Captured the preview into this scene');
   }
 
   /* ---------- sidebar ---------- */
@@ -648,26 +712,78 @@ export async function bootEditor(root) {
     } else if (kind === 'scene') {
       head(item.name || item.id, `id: ${item.id}`);
       item.lights ||= {};
-      const rule = (id) => ({
-        get: () => (item.lights[id]?.on === true ? 'on' : item.lights[id]?.on === false ? 'off' : ''),
-        set: (v) => {
-          if (v === '') delete item.lights[id];
-          else item.lights[id] = { ...(item.lights[id] || {}), on: v === 'on' };
-        },
+      item.acs ||= {};
+      // What the scene does to a device: the rule it holds itself, or the one it inherits
+      // from "*". A lamp the default turns on therefore reads "On" before it is named.
+      const stateOf = (k, id) => rule(item, k, id);
+      const onLabel = (k, id) => {
+        const on = stateOf(k, id).on;
+        return on === true ? 'on' : on === false ? 'off' : '';
+      };
+      const onBind = (k, id, label) => bind(label, choice([['', 'Leave as is'], ['on', 'On'], ['off', 'Off']]), {
+        get: () => onLabel(k, id),
+        set: (v) => setRule(item, k, id, { on: v === '' ? undefined : v === 'on' }),
+        event: 'change',
       });
-      const tri = () => choice([['', 'Leave as is'], ['on', 'On'], ['off', 'Off']]);
+      // A slider and a swatch write as they are used. The inspector is rebuilt under a
+      // select, not under a finger, so only the colour, which moves a tick, asks for one.
+      const write = (k, id, patch, redraw = false) => {
+        snapshot(`scene:${sel.index}:${id}`);
+        setRule(item, k, id, patch);
+        touch({ inspector: redraw });
+      };
+      const slider = (label, opts) => h('div.field', h('span', label), createSlider(opts).el);
+      const sameColor = (a, b) => (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
+      const lightDetail = (l) => {
+        const caps = l.capabilities || [];
+        const now = stateOf('light', l.id);
+        const out = [];
+        if (caps.includes('brightness')) out.push(slider('Brightness, %', {
+          min: 5, max: 100, detent: 5, value: Math.round((now.brightness ?? 0.8) * 100), gradient: DIM_GRADIENT,
+          onInput: (v) => write('light', l.id, { brightness: v / 100 }),
+        }));
+        if (caps.includes('temp')) out.push(slider('White temperature, K', {
+          min: 2200, max: 6500, step: 100, detent: 500, value: now.temp ?? 3000, gradient: KELVIN_GRADIENT,
+          onInput: (v) => write('light', l.id, { temp: v }),
+        }));
+        if (caps.includes('color')) {
+          const swatch = (hex, value) => h(`button.swatch${sameColor(value, now.color) ? '.selected' : ''}`,
+            { 'aria-label': value || 'White', vars: { '--sw': hex }, onclick: () => write('light', l.id, { color: value }, true) });
+          out.push(h('div.field', h('span', 'Colour'), h('div.swatches', swatch('#ffffff', null), SWATCHES.map((c) => swatch(c, c)))));
+        }
+        return out;
+      };
+      const lightNodes = [onBind('light', '*', 'All lights (default)')];
+      for (const l of doc.lights) {
+        lightNodes.push(onBind('light', l.id, `${l.name} · ${roomName(l.room)}`));
+        if (onLabel('light', l.id) === 'on') lightNodes.push(...lightDetail(l));
+      }
+      const acDetail = (a) => {
+        const now = stateOf('ac', a.id);
+        return [
+          slider('Target, °C', {
+            min: a.min ?? 16, max: a.max ?? 30, value: now.target ?? 23, gradient: TEMP_GRADIENT,
+            onInput: (v) => write('ac', a.id, { target: v }),
+          }),
+          h('div.fields',
+            bind('Mode', choice(AC_MODES), { get: () => now.mode ?? 'cool', set: (v) => setRule(item, 'ac', a.id, { mode: v }), event: 'change' }),
+            bind('Fan', choice(AC_FANS), { get: () => now.fan ?? 'auto', set: (v) => setRule(item, 'ac', a.id, { fan: v }), event: 'change' })),
+        ];
+      };
+      const acNodes = [onBind('ac', '*', 'All ACs')];
+      for (const a of doc.acs) {
+        acNodes.push(onBind('ac', a.id, `${a.name} · ${roomName(a.room)}`));
+        if (onLabel('ac', a.id) === 'on') acNodes.push(...acDetail(a));
+      }
       nodes.push(section('Scene',
         row(bind('Name', text(), prop(item, 'name', '')), bind('Icon', choice(SCENE_ICONS), { ...prop(item, 'icon', 'sun'), event: 'change' }))),
-      section('Lights',
-        bind('All lights (default)', tri(), { ...rule('*'), event: 'change' }),
-        doc.lights.map((l) => bind(`${l.name} · ${roomName(l.room)}`, tri(), { ...rule(l.id), event: 'change' })),
-        h('p.note', 'Brightness, temperature and colour per light are kept from the plan file; edit them there for fine control.')),
-      section('Air conditioners',
-        bind('All ACs', choice([['', 'Leave as is'], ['off', 'Turn off'], ['on', 'Turn on']]), {
-          get: () => (item.acs?.['*']?.on === true ? 'on' : item.acs?.['*']?.on === false ? 'off' : ''),
-          set: (v) => { item.acs ||= {}; if (v === '') delete item.acs['*']; else item.acs['*'] = { on: v === 'on' }; },
-          event: 'change',
-        })));
+      section('From the preview',
+        h('p.note', 'Tap lamps and ACs in the 3D preview until the home looks right, then write that look into this scene.'),
+        h('button.btn.wide', { onclick: capturePreview }, 'Capture what the preview shows')),
+      section('Lights', ...lightNodes,
+        h('p.note', 'Turn a lamp on and it gains its brightness, temperature and colour.')),
+      section('Air conditioners', ...acNodes,
+        h('p.note', 'Set a target, mode and fan on any AC the scene turns on.')));
     }
     const key = `${sel.kind}:${sel.index ?? sel.service ?? ''}`;
     const same = key === inspector.dataset.key;

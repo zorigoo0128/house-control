@@ -25,6 +25,12 @@ export function h(spec, props, ...children) {
 
 export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
+// The palette and the slider gradients, shared by the panel and the home editor.
+export const SWATCHES = ['#ff5a4f', '#ff9a3c', '#ffd84a', '#5fe08a', '#42d6e8', '#4f8dff', '#8b5cff', '#ff5fc4'];
+export const TEMP_GRADIENT = 'linear-gradient(90deg, #2f7df6 0%, #58b4f5 34%, #f3e2c0 62%, #f6a54a 82%, #f0762c 100%)';
+export const DIM_GRADIENT = 'linear-gradient(90deg, #4a4f5e 0%, #b9a98c 45%, #ffe2b0 100%)';
+export const KELVIN_GRADIENT = 'linear-gradient(90deg, #ff9438 0%, #ffbd7a 30%, #ffe2c2 62%, #dfe9ff 100%)';
+
 // Horizontal slider with a gradient fill that reveals under a chunky thumb.
 // `detent` is how far the value travels between two haptic ticks on a phone.
 export function createSlider({ min, max, step = 1, value, gradient, compact = false, labels, onInput, detent = step }) {
