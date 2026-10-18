@@ -2,8 +2,11 @@
 // written on disk. Nothing here touches the page, so it runs (and is tested) under Node too.
 import { normalize, LIGHT_KINDS, FLOOR_KINDS, LINK_FIELDS, isLinked } from '../config.js';
 import { FURNITURE_TYPES, footprint } from '../three/furniture.js';
+import { validate } from '../scene-rules.js';
 
-export const SCENE_ICONS = ['sun', 'sofa', 'film', 'moon', 'door', 'bed', 'tv', 'sparkles'];
+// The icons a scene may use, and the checks on the rules it sets, are shared with the
+// editor and the panel (scene-rules.js): the AI must accept what they offer.
+export { SCENE_ICONS } from '../scene-rules.js';
 export const WALLS = ['north', 'south', 'east', 'west'];
 const FURNITURE_KEYS = ['type', 'pos', 'rot', 'width', 'height', 'size', 'color', 'chairs', 'stools', 'upper'];
 const LIGHT_KEYS = ['id', 'name', 'room', 'type', 'pos', 'y', 'rot', 'length', 'capabilities', 'color'];
@@ -248,14 +251,10 @@ export function applyOperations(raw, operations) {
         const source = adding ? op : { ...plan.scenes[findById(plan.scenes, op.id, 'scene')], ...(op.set || {}) };
         if (adding && plan.scenes.some((s) => s.id === op.id)) fail(`${where}: a scene "${op.id}" already exists`);
         if (typeof source.id !== 'string' || !source.id) fail(`${where}: "id" is required`);
-        if (source.icon != null && !SCENE_ICONS.includes(source.icon)) fail(`${where}: "icon" must be one of ${SCENE_ICONS.join(', ')}`);
         const scene = { id: source.id, name: String(source.name || source.id), icon: source.icon || 'sparkles',
           lights: source.lights || {}, acs: source.acs || {} };
-        for (const [id, s] of Object.entries(scene.lights)) {
-          if (id !== '*' && !plan.lights.some((l) => l.id === id)) fail(`${where}: unknown light "${id}"`);
-          if (s.brightness != null && !(s.brightness > 0 && s.brightness <= 1)) fail(`${where}: scene brightness is 0–1 (0.6 = 60%)`);
-        }
-        for (const id of Object.keys(scene.acs)) if (id !== '*' && !plan.acs.some((a) => a.id === id)) fail(`${where}: unknown AC "${id}"`);
+        const problems = validate(scene, plan);
+        if (problems.length) fail(`${where}: ${problems[0]}`);
         if (adding) plan.scenes.push(scene);
         else plan.scenes[plan.scenes.findIndex((s) => s.id === op.id)] = scene;
         changes.push(`${adding ? 'added' : 'changed'} scene ${scene.name}`);

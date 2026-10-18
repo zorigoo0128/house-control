@@ -10,6 +10,7 @@ import { h, clamp } from '../ui/dom.js';
 import { icon } from '../ui/icons.js';
 import { isNative, isPhone, call, post, haptic, incoming } from '../bridge.js';
 import { createConnections } from './connections.js';
+import { SCENE_ICONS } from '../scene-rules.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const sv = (tag, attrs = {}, ...kids) => {
@@ -23,7 +24,6 @@ const KEYS = { room: 'rooms', light: 'lights', ac: 'acs', furniture: 'furniture'
 const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
 const FLOOR_FILL = { oak: '#4a3d2e', walnut: '#3c2f28', tile: '#39424b', stone: '#30353c' };
 const WALLS = ['north', 'east', 'south', 'west'];
-const SCENE_ICONS = ['sun', 'sofa', 'film', 'moon', 'door', 'table', 'bed', 'tv', 'sparkles'];
 const REGIONS = [
   ['eu', 'Central Europe'], ['eu-w', 'Western Europe'], ['us', 'Western America'], ['us-e', 'Eastern America'],
   ['cn', 'China'], ['in', 'India'], ['sg', 'Singapore'],

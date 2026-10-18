@@ -1,10 +1,10 @@
 import { post, call, isNative } from './bridge.js';
+import { AC_MODES, AC_FANS, AC_SWINGS, applyTo } from './scene-rules.js';
 
 const STORAGE_KEY = 'house-control:state:v1';
 
-export const AC_MODES = ['cool', 'heat', 'dry', 'fan', 'auto'];
-export const AC_FANS = ['auto', 'low', 'medium', 'high', 'turbo'];
-export const AC_SWINGS = ['swing', 'l1', 'l2', 'l3', 'l4', 'l5', 'off'];
+// What an AC can be, shared with the scene rules and the AI's plan editor.
+export { AC_MODES, AC_FANS, AC_SWINGS };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -203,15 +203,9 @@ export function createStore(config) {
     applyScene(sceneId) {
       const scene = config.scenes.find((s) => s.id === sceneId);
       if (!scene) return;
-      for (const id of Object.keys(state.lights)) {
-        const patch = { ...(scene.lights['*'] || {}), ...(scene.lights[id] || {}) };
-        // A scene that sets a white temperature should not be overridden by a stale colour.
-        if (!('color' in patch) && 'temp' in patch) patch.color = null;
-        writeLight(id, patch);
-      }
-      for (const id of Object.keys(state.acs)) {
-        const patch = { ...(scene.acs['*'] || {}), ...(scene.acs[id] || {}) };
-        if (Object.keys(patch).length) writeAC(id, patch);
+      for (const { kind, id, patch } of applyTo(state, scene)) {
+        if (kind === 'light') writeLight(id, patch);
+        else writeAC(id, patch);
       }
       state.scene = sceneId;
       emit({ type: 'bulk', scene: sceneId });
