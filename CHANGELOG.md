@@ -3,6 +3,14 @@
 What changed in each release of House Control. The Mac app is on
 [Releases](https://github.com/0xProbabillity/house-control/releases); the iPhone app is on TestFlight.
 
+## Unreleased
+
+### Mac
+
+- **No right-click menu.** WebKit's own context menu (Reload, Inspect Element) no longer pops up over the
+  panel, the island, the editor or the AI Access window. In the editor's text fields, ⌘C/⌘V and the Edit menu
+  still work.
+
 ## 1.1.0 — 2026-10-18
 
 ### Mac

@@ -3,9 +3,14 @@ import WebKit
 import HouseCore
 
 /// Takes the click that reaches a window which is not the key one (the island never is:
-/// hovering the notch must not steal the keyboard from the app you are typing in).
+/// hovering the notch must not steal the keyboard from the app you are typing in), and
+/// shows no context menu: WebKit's own (Reload, Inspect Element) does not belong in the UI.
 private final class FirstMouseWebView: WKWebView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        menu.removeAllItems()
+    }
 }
 
 /// A WKWebView showing the web UI in one of its modes ("panel", "editor", "island" or "agent"),
