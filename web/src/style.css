@@ -269,6 +269,59 @@ html.native .card { width: auto; height: auto; box-shadow:
 }
 .scene.active .icon { color: #a9cbff; }
 
+/* Light groups: the pill of a room, but it switches a set of lamps anywhere in the home. */
+.groups {
+  display: flex;
+  gap: 6px;
+  margin: 10px -16px 0;
+  padding: 0 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+}
+.groups::-webkit-scrollbar { display: none; }
+
+.group-chip {
+  flex: none;
+  max-width: 190px;
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  cursor: pointer;
+  transition: background 220ms, color 220ms, border-color 220ms, transform 260ms var(--spring);
+}
+.group-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (hover: hover) { .group-chip:hover { background: var(--glass-hi); color: var(--text); } }
+.group-chip:active { transform: scale(0.95); }
+.group-chip.on {
+  color: var(--text);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--warm) 22%, transparent), color-mix(in srgb, var(--warm) 7%, transparent));
+  border-color: color-mix(in srgb, var(--warm) 42%, transparent);
+}
+.group-chip.on .icon { color: var(--warm); }
+
+.chip-more {
+  flex: none;
+  width: 22px; height: 22px; margin-right: -6px; border-radius: 8px;
+  display: grid; place-items: center;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 180ms, background 180ms, color 180ms;
+}
+.chip-more:focus-visible { opacity: 1; }
+@media (hover: hover) { .group-chip:hover .chip-more { opacity: 1; } }
+@media (hover: hover) { .chip-more:hover { background: rgba(255, 255, 255, 0.14); color: var(--text); } }
+
 .rooms {
   display: flex;
   gap: 6px;
@@ -721,6 +774,7 @@ html.ios .panel { padding: 0 16px; }
 html.ios .sheet { padding: 0 20px calc(var(--safe-bottom) + 14px); }
 html.ios .scene { height: 68px; border-radius: 20px; font-size: 12.5px; }
 html.ios .room { height: 38px; padding: 0 15px; font-size: 14px; }
+html.ios .group-chip { height: 40px; padding: 0 15px; font-size: 14px; }
 html.ios .list-head { font-size: 13px; margin: 12px 4px 10px; }
 html.ios .pill { height: 32px; padding: 0 14px; font-size: 13px; }
 html.ios .devices {

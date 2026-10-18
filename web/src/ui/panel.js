@@ -44,11 +44,12 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     onclick: () => onMenu(aiBadge, 'agent') }, icon('sparkles', 13, 2.2), h('span', 'AI'));
 
   const scenes = h('div.scenes');
+  const groups = h('div.groups');
   const rooms = h('div.rooms');
   const listTitle = h('span.title');
   const grid = h('div.grid');
   const panel = h('section.panel',
-    scenes, rooms,
+    scenes, groups, rooms,
     h('div.list-head', listTitle,
       h('button.pill', { onclick: () => bulk(true) }, 'All on'),
       h('button.pill', { onclick: () => bulk(false) }, 'All off')),
@@ -77,6 +78,48 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     scenes.append(b);
   }
   if (!config.scenes.length) scenes.style.display = 'none';
+
+  /* ---------- light groups ---------- */
+
+  // A group is a shortcut over lights anywhere in the home: tap it to switch the whole set,
+  // hold it (phone) or use its button (desktop) to set them all to one brightness and look.
+  const groupButtons = new Map();
+  for (const g of config.groups) {
+    if (!g.lights.length) continue; // a group still being built in the editor controls nothing
+    const more = isPhone ? null
+      : h('button.chip-more', { 'aria-label': `${g.name} settings`, onclick: (e) => { e.stopPropagation(); openSheet({ kind: 'group', id: g.id }); } }, icon('sliders', 14));
+    const b = h('div.group-chip', { role: 'button', tabindex: 0, 'aria-label': g.name }, icon(g.icon, 15), h('span', g.name), more);
+    let holdTimer = 0;
+    let held = false;
+    let fromX = 0;
+    const stopHold = () => { clearTimeout(holdTimer); holdTimer = 0; };
+    b.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0 || ev.target.closest('.chip-more')) return;
+      held = false;
+      fromX = ev.clientX;
+      if (isPhone) holdTimer = setTimeout(() => { held = true; haptic('medium'); openSheet({ kind: 'group', id: g.id }); }, 420);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, stopHold);
+    // A mostly sideways move is the row being scrolled, not a press.
+    b.addEventListener('pointermove', (ev) => { if (Math.abs(ev.clientX - fromX) > 8) stopHold(); });
+    b.addEventListener('click', () => {
+      stopHold();
+      if (held) { held = false; return; }
+      toggleGroup(g.id);
+    });
+    b.addEventListener('keydown', (ev) => {
+      if (ev.key === ' ' || ev.key === 'Enter') { ev.preventDefault(); toggleGroup(g.id); }
+    });
+    groupButtons.set(g.id, { b, lights: g.lights });
+    groups.append(b);
+  }
+  if (!groupButtons.size) groups.style.display = 'none';
+
+  function toggleGroup(id) {
+    haptic('light');
+    for (const lid of config.groups.find((g) => g.id === id)?.lights || []) world?.lights.get(lid)?.bump();
+    store.toggleGroup(id);
+  }
 
   /* ---------- rooms ---------- */
 
@@ -253,7 +296,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     }
     if (!nodes.length) nodes.push(h('div.group-label', 'No devices in this room yet'));
     else if (isPhone && config.lights.some((l) => l.capabilities.length && inScope(l))) {
-      nodes.push(h('div.grid-hint', 'Touch and hold a light for brightness and colour'));
+      nodes.push(h('div.grid-hint', 'Touch and hold a light or a group for brightness and colour'));
     }
     grid.replaceChildren(...nodes);
     grid.parentElement.scrollTop = 0;
@@ -265,7 +308,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
 
   function openSheet(target) {
     ui.sheet = target;
-    sheetView = target.kind === 'ac' ? acSheet(target.id) : lightSheet(target.id);
+    sheetView = target.kind === 'ac' ? acSheet(target.id) : target.kind === 'group' ? groupSheet(target.id) : lightSheet(target.id);
     sheet.replaceChildren(...sheetView.nodes);
     panel.classList.add('hidden');
     sheet.classList.remove('hidden');
@@ -273,7 +316,7 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     sheet.inert = false;
     card.classList.add('detail');
     hideTooltip();
-    onFocus(target.kind === 'ac' ? target : { kind: 'room', id: store.lightCfg.get(target.id).room });
+    onFocus(target.kind === 'light' ? { kind: 'room', id: store.lightCfg.get(target.id).room } : target);
     update();
   }
 
@@ -458,6 +501,92 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     };
   }
 
+  /* ---------- the sheet of a whole light group ---------- */
+
+  function groupSheet(id) {
+    const cfg = config.groups.find((g) => g.id === id);
+    const members = () => cfg.lights.map((lid) => ({ cfg: store.lightCfg.get(lid), s: state.lights[lid] })).filter((m) => m.s);
+    const set = (patch) => store.setGroup(id, patch);
+    const withCap = (cap) => members().filter((m) => m.cfg.capabilities.includes(cap));
+    const dims = withCap('brightness').length > 0;
+    const warms = withCap('temp').length > 0;
+    const coloured = withCap('color').length > 0;
+    // The value the controls sit at until the first touch: the first member that has the ability.
+    const starting = (cap, key, fallback) => withCap(cap)[0]?.s[key] ?? fallback;
+    // A value every member shares, `null` while they differ.
+    const shared = (cap, pick) => {
+      const values = withCap(cap).map(pick);
+      return values.length && values.every((v) => v === values[0]) ? values[0] : null;
+    };
+    const average = () => {
+      const d = withCap('brightness');
+      return d.length ? Math.round(100 * d.reduce((t, m) => t + m.s.brightness, 0) / d.length) : 0;
+    };
+    const sub = h('div.sheet-sub');
+    const powerBtn = h('button.round.power', { 'aria-label': 'Power', onclick: () => { haptic('medium'); toggleGroup(id); } }, icon('power', 21, 2.2));
+    const big = bigNumber('%');
+    const nodes = [sheetHead(cfg.name, sub, powerBtn), h('div.readout', big.el)];
+    const sliders = {};
+    let kelvinLabel = null;
+    let colorLabel = null;
+    let swatches = [];
+
+    if (dims) {
+      sliders.brightness = createSlider({
+        min: 5, max: 100, value: average(), gradient: DIM_GRADIENT, detent: 5,
+        onInput: (v) => set({ on: true, brightness: v / 100 }),
+      });
+      const nudge = (d) => { haptic('tick'); set({ on: true, brightness: clamp(average() / 100 + d, 0.05, 1) }); };
+      nodes.push(h('div.slider-row',
+        h('button.round', { 'aria-label': 'Dimmer', onclick: () => nudge(-0.1) }, icon('dim', 18)),
+        sliders.brightness.el,
+        h('button.round', { 'aria-label': 'Brighter', onclick: () => nudge(0.1) }, icon('bright', 18))));
+    }
+    if (warms) {
+      kelvinLabel = h('span');
+      sliders.temp = createSlider({
+        min: 2200, max: 6500, step: 100, value: starting('temp', 'temp', 3000), gradient: KELVIN_GRADIENT, compact: true, detent: 500,
+        onInput: (v) => set({ on: true, temp: v }),
+      });
+      nodes.push(h('div.field-label', h('span', 'Colour temperature'), kelvinLabel), h('div.slider-row', sliders.temp.el));
+    }
+    if (coloured) {
+      colorLabel = h('span');
+      const swatch = (value) => h('button.swatch', {
+        'aria-label': value || 'White', vars: { '--sw': value || '#ffffff' },
+        onclick: () => { haptic('light'); set({ on: true, color: value }); },
+      });
+      swatches = [swatch(null), ...SWATCHES.map(swatch)];
+      nodes.push(h('div.field-label', h('span', 'Colour'), colorLabel), h('div.swatches', swatches));
+    }
+    if (!dims && !warms && !coloured) {
+      nodes.push(h('div.sheet-note', icon(cfg.icon, 20),
+        `${members().length} lamps on one switch. None of them can dim, change white or change colour.`));
+    }
+
+    return {
+      nodes,
+      update() {
+        const all = members();
+        const on = all.filter((m) => m.s.on).length;
+        powerBtn.classList.toggle('on', on > 0);
+        sub.replaceChildren(h('b', `${on} of ${all.length}`), ' on');
+        big.set(dims ? average() : on ? 100 : 0, on === 0);
+        sliders.brightness?.set(average());
+        if (sliders.temp) sliders.temp.set(shared('temp', (m) => m.s.temp) ?? starting('temp', 'temp', 3000));
+        if (kelvinLabel) {
+          const t = shared('temp', (m) => m.s.temp);
+          kelvinLabel.textContent = t == null ? 'Mixed' : `${t} K`;
+        }
+        if (colorLabel) {
+          const c = shared('color', (m) => (m.s.color ?? '').toLowerCase());
+          colorLabel.textContent = c == null ? 'Mixed' : c ? c.toUpperCase() : 'White';
+          [null, ...SWATCHES].forEach((v, i) => swatches[i].classList.toggle('selected', c != null && (v ?? '').toLowerCase() === c));
+        }
+      },
+    };
+  }
+
   /* ---------- tooltip ---------- */
 
   function hideTooltip() { tooltip.classList.remove('show'); }
@@ -522,6 +651,10 @@ export function createPanel(root, config, store, { onFocus, onMenu }) {
     power.classList.toggle('on', anyOn);
 
     for (const [id, b] of sceneButtons) b.classList.toggle('active', state.scene === id);
+
+    for (const { b, lights } of groupButtons.values()) {
+      b.classList.toggle('on', lights.some((lid) => state.lights[lid]?.on));
+    }
 
     for (const [id, { b, count }] of roomButtons) {
       b.classList.toggle('active', ui.room === id);

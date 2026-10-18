@@ -95,7 +95,7 @@ function checkRect(rect, where) {
 export function applyOperations(raw, operations) {
   if (!Array.isArray(operations) || !operations.length) fail('"operations" must be a non-empty list');
   const plan = structuredClone(raw);
-  for (const key of ['rooms', 'openings', 'furniture', 'lights', 'acs', 'scenes']) plan[key] = plan[key] || [];
+  for (const key of ['rooms', 'openings', 'furniture', 'lights', 'acs', 'scenes', 'groups']) plan[key] = plan[key] || [];
   const originalFurniture = plan.furniture.length;
   const originalOpenings = plan.openings.length;
   const dropFurniture = new Set();
@@ -109,6 +109,18 @@ export function applyOperations(raw, operations) {
     }
     if (dropFurniture.has(op.index)) fail(`${where}: furniture #${op.index} is already removed in this edit`);
     return op.index;
+  };
+
+  // The lights of a group: every id must be a light of this plan (or one added by this edit).
+  const checkMembers = (members, where) => {
+    if (!Array.isArray(members)) fail(`${where}: "lights" must be a list of light ids`);
+    for (const id of members) {
+      if (!plan.lights.some((l) => l.id === id)) {
+        fail(`${where}: there is no light "${id}". Lights: ${plan.lights.map((l) => l.id).join(', ') || 'none'}`);
+      }
+    }
+    if (new Set(members).size !== members.length) fail(`${where}: a light is listed twice`);
+    return [...members];
   };
 
   operations.forEach((op, n) => {
@@ -160,6 +172,8 @@ export function applyOperations(raw, operations) {
         plan.furniture.forEach((f, k) => { if (k < originalFurniture && roomAt({ rooms: [room] }, f.pos)) dropFurniture.add(k); });
         plan.lights = plan.lights.filter((d) => d.room !== op.id);
         plan.acs = plan.acs.filter((d) => d.room !== op.id);
+        const left = new Set(plan.lights.map((d) => d.id));
+        for (const g of plan.groups) g.lights = (g.lights || []).filter((id) => left.has(id));
         plan.rooms.splice(i, 1);
         changes.push(`removed room ${room.name}`);
         break;
@@ -242,6 +256,7 @@ export function applyOperations(raw, operations) {
         if (isLinked(list[i])) fail(`${where}: "${list[i].name}" is a real device; unlink it in the editor before removing it`);
         const [gone] = list.splice(i, 1);
         for (const s of plan.scenes) delete s[isLight ? 'lights' : 'acs']?.[gone.id];
+        if (isLight) for (const g of plan.groups) g.lights = (g.lights || []).filter((id) => id !== gone.id);
         changes.push(`removed ${gone.name || gone.id}`);
         break;
       }
@@ -266,10 +281,30 @@ export function applyOperations(raw, operations) {
         plan.scenes.splice(i, 1);
         break;
       }
+      case 'add_group':
+      case 'update_group': {
+        const adding = op.op === 'add_group';
+        const source = adding ? op : { ...plan.groups[findById(plan.groups, op.id, 'light group')], ...(op.set || {}) };
+        if (adding && plan.groups.some((g) => g.id === op.id)) fail(`${where}: a light group "${op.id}" already exists`);
+        if (typeof source.id !== 'string' || !source.id) fail(`${where}: "id" is required`);
+        const group = { id: source.id, name: String(source.name || source.id), icon: source.icon || 'sparkles',
+          lights: checkMembers(source.lights || [], where) };
+        if (adding) plan.groups.push(group);
+        else plan.groups[plan.groups.findIndex((g) => g.id === op.id)] = group;
+        changes.push(`${adding ? 'added' : 'changed'} light group ${group.name} (${group.lights.length} lights)`);
+        break;
+      }
+      case 'remove_group': {
+        const i = findById(plan.groups, op.id, 'light group');
+        changes.push(`removed light group ${plan.groups[i].name}`);
+        plan.groups.splice(i, 1);
+        break;
+      }
       default:
         fail(`${where}: unknown operation. Use one of: set_home, add_room, update_room, remove_room, furnish_room, `
           + 'add_furniture, update_furniture, remove_furniture, add_opening, remove_opening, add_light, update_light, '
-          + 'remove_light, add_ac, update_ac, remove_ac, add_scene, update_scene, remove_scene');
+          + 'remove_light, add_ac, update_ac, remove_ac, add_scene, update_scene, remove_scene, '
+          + 'add_group, update_group, remove_group');
     }
   });
 

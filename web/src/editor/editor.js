@@ -20,8 +20,8 @@ const sv = (tag, attrs = {}, ...kids) => {
   return el;
 };
 
-const KEYS = { room: 'rooms', light: 'lights', ac: 'acs', furniture: 'furniture', opening: 'openings', scene: 'scenes' };
-const TITLES = { room: 'Rooms', light: 'Lights', ac: 'Air conditioners', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
+const KEYS = { room: 'rooms', light: 'lights', group: 'groups', ac: 'acs', furniture: 'furniture', opening: 'openings', scene: 'scenes' };
+const TITLES = { room: 'Rooms', light: 'Lights', group: 'Light groups', ac: 'Air conditioners', furniture: 'Furniture', opening: 'Doors & windows', scene: 'Scenes' };
 const FLOOR_FILL = { oak: '#4a3d2e', walnut: '#3c2f28', tile: '#39424b', stone: '#30353c' };
 const WALLS = ['north', 'east', 'south', 'west'];
 const REGIONS = [
@@ -309,6 +309,7 @@ export async function bootEditor(root) {
     if (kind === 'room') return [item.name || item.id, `${fix(item.rect[2])} × ${fix(item.rect[3])} m`];
     if (kind === 'light') return [item.name || item.id, `${roomName(item.room)} · ${item.type}`];
     if (kind === 'ac') return [item.name || item.id, `${roomName(item.room)} · ${item.wall} wall`];
+    if (kind === 'group') return [item.name || item.id, item.lights?.length ? `${item.lights.length} lights` : 'No lights yet'];
     if (kind === 'furniture') return [item.type, roomName(roomAt(item.pos)?.id) || '—'];
     if (kind === 'opening') return [item.type || 'door', `${fix(Math.hypot(item.to[0] - item.from[0], item.to[1] - item.from[1]))} m`];
     return [item.name || item.id, `${Object.keys(item.lights || {}).length} rules`];
@@ -342,7 +343,7 @@ export async function bootEditor(root) {
   }
 
   function uniqueId(base) {
-    const ids = new Set([...doc.rooms, ...doc.lights, ...doc.acs, ...doc.scenes].map((x) => x.id));
+    const ids = new Set([...doc.rooms, ...doc.lights, ...doc.acs, ...doc.scenes, ...doc.groups].map((x) => x.id));
     if (!ids.has(base)) return base;
     for (let i = 2; ; i++) if (!ids.has(`${base}${i}`)) return `${base}${i}`;
   }
@@ -370,6 +371,9 @@ export async function bootEditor(root) {
       list.push({ type: 'door', from: [fix(center[0] - 0.45), fix(z)], to: [fix(center[0] + 0.45), fix(z)] });
     } else if (kind === 'scene') {
       list.push({ id: uniqueId('scene'), name: 'New scene', icon: 'sparkles', lights: { '*': { on: false } } });
+    } else if (kind === 'group') {
+      // Starts empty: tick the lamps it should hold in its form.
+      list.push({ id: uniqueId('group'), name: 'New group', icon: 'sparkles', lights: [] });
     }
     sel = { kind, index: list.length - 1 };
     touch();
@@ -402,6 +406,8 @@ export async function bootEditor(root) {
       for (const sc of doc.scenes) {
         for (const map of [sc.lights, sc.acs]) for (const id of Object.keys(map || {})) if (id !== '*' && !ids.has(id)) delete map[id];
       }
+      // A group cannot hold a lamp that is gone.
+      for (const g of doc.groups) g.lights = (g.lights || []).filter((id) => ids.has(id));
     }
     sel = { kind: 'home' };
     touch();
@@ -744,6 +750,21 @@ export async function bootEditor(root) {
         item.type === 'window' ? row(bind('Sill, m', number(), { ...prop(item, 'sill', 0.85), parse: parseNum }),
           bind('Head, m', number(), { ...prop(item, 'head', 2.1), parse: parseNum })) : null,
         h('p.note', 'Both points must lie on the same wall line (same X or same Z). Windows only show on the far walls; the walls facing the camera are cut away.')));
+    } else if (kind === 'group') {
+      head(item.name || item.id, `id: ${item.id}`);
+      item.lights ||= [];
+      const member = (l) => bind(`${l.name || l.id} · ${roomName(l.room)}`, h('input', { type: 'checkbox' }), {
+        get: () => item.lights.includes(l.id),
+        set: (on) => { item.lights = on ? [...item.lights, l.id] : item.lights.filter((id) => id !== l.id); },
+        event: 'change',
+      });
+      nodes.push(section('Light group',
+        row(bind('Name', text(), prop(item, 'name', '')),
+          bind('Icon', choice(SCENE_ICONS), { ...prop(item, 'icon', 'sparkles'), event: 'change' }))),
+      section('Lights',
+        doc.lights.length ? h('div.checks', doc.lights.map(member)) : h('p.note', 'This plan has no lamps yet.'),
+        h('p.note', 'The panel switches everything ticked here in one go. A lamp may be in any number of groups. '
+          + 'An empty group is allowed while you are still choosing its lights.')));
     } else if (kind === 'scene') {
       head(item.name || item.id, `id: ${item.id}`);
       item.lights ||= {};

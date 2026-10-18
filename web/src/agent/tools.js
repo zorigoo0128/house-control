@@ -77,6 +77,13 @@ export function createAgent({ store, config, raw, render, onAction }) {
     if (config.scenes.length) {
       lines.push('', `Scenes: ${config.scenes.map((s) => `${s.name} [${s.id}]`).join(', ')}`);
     }
+    if (config.groups.length) {
+      lines.push('', 'Light groups (switched as one):');
+      for (const g of config.groups) {
+        const names = g.lights.map((id) => config.lights.find((l) => l.id === id)?.name || id);
+        lines.push(`  • ${g.name} [${g.id}] — ${names.join(', ') || 'no lights'}`);
+      }
+    }
     return lines.join('\n');
   }
 
@@ -90,6 +97,7 @@ export function createAgent({ store, config, raw, render, onAction }) {
         acs: config.acs.filter((a) => a.room === r.id).map(acJSON),
       })),
       scenes: config.scenes.map((s) => ({ id: s.id, name: s.name })),
+      groups: config.groups.map((g) => ({ id: g.id, name: g.name, lights: g.lights })),
     };
   }
 
@@ -113,6 +121,13 @@ export function createAgent({ store, config, raw, render, onAction }) {
         const inRoom = list.filter((d) => d.room === room.id);
         if (!inRoom.length) fail(`${room.name} has no ${what}.`);
         for (const d of inRoom) out.add(d);
+        continue;
+      }
+      const group = config.groups.find((g) => g.id === t || norm(g.name) === key);
+      if (group) {
+        const members = list.filter((d) => group.lights.includes(d.id));
+        if (!members.length) fail(`${group.name} has no ${what}.`);
+        for (const d of members) out.add(d);
         continue;
       }
       const byName = list.filter((d) => norm(d.name) === key || norm(`${roomName.get(d.room)} ${d.name}`) === key);
@@ -235,7 +250,8 @@ export function createAgent({ store, config, raw, render, onAction }) {
 
   const TARGETS = {
     type: 'array', items: { type: 'string' },
-    description: 'Which devices: ids like "living.main", room ids like "living" (every one in the room), names, or "all".',
+    description: 'Which devices: ids like "living.main", room ids like "living" (every one in the room), '
+      + 'light group ids or names (every light of the group), names, or "all".',
   };
   const FURNITURE_ITEM = {
     type: 'object',
@@ -255,7 +271,7 @@ export function createAgent({ store, config, raw, render, onAction }) {
     {
       name: 'get_home', group: 'read',
       title: 'Look at the home',
-      description: 'Every room with its lights and air conditioners, what each can do and what it is doing now, and the scenes. Call this first.',
+      description: 'Every room with its lights and air conditioners, what each can do and what it is doing now, the scenes, and the light groups. Call this first.',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true, openWorldHint: false },
       run: () => ({ text: overview(), data: structured(), summary: 'Looked at the home', quiet: true }),
@@ -263,7 +279,8 @@ export function createAgent({ store, config, raw, render, onAction }) {
     {
       name: 'set_lights', group: 'control',
       title: 'Switch or adjust lights',
-      description: 'Turn lights on or off, dim them, or change their white temperature or colour. Several lights at once is fine. '
+      description: 'Turn lights on or off, dim them, or change their white temperature or colour. Several lights at once is fine, '
+        + 'and so is a light group, which stands for every lamp in it. '
         + 'Brightness, temperature or colour also switch a light on. Lights that cannot do something are reported, not failed.',
       inputSchema: {
         type: 'object', required: ['lights'],
@@ -322,7 +339,7 @@ export function createAgent({ store, config, raw, render, onAction }) {
     {
       name: 'get_floor_plan', group: 'read',
       title: 'Read the 3D floor plan',
-      description: 'The floor plan the 3D model is built from: rooms, walls openings, furniture (by index), lights, ACs and scenes, '
+      description: 'The floor plan the 3D model is built from: rooms, walls openings, furniture (by index), lights, ACs, scenes and light groups, '
         + 'plus the furniture catalogue and the coordinate rules. Read it before edit_floor_plan.',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true, openWorldHint: false },
@@ -347,7 +364,8 @@ export function createAgent({ store, config, raw, render, onAction }) {
         + 'furnish_room{room,items[]}, add_furniture{item|items[]}, update_furniture{index,set{}}, remove_furniture{index}, '
         + 'add_opening{type,from,to,sill,head}, remove_opening{index}, add_light{id,name,room,type,pos,capabilities,y,rot,length,color}, '
         + 'update_light{id,set{}}, remove_light{id}, add_ac{id,name,room,wall,pos,y,min,max}, update_ac{id,set{}}, remove_ac{id}, '
-        + 'add_scene{id,name,icon,lights{},acs{}}, update_scene{id,set{}}, remove_scene{id}. '
+        + 'add_scene{id,name,icon,lights{},acs{}}, update_scene{id,set{}}, remove_scene{id}, '
+        + 'add_group{id,name,icon,lights[]}, update_group{id,set{}}, remove_group{id}. '
         + 'Indexes are those from get_floor_plan, before this edit.',
       inputSchema: {
         type: 'object', required: ['operations'],
@@ -359,7 +377,8 @@ export function createAgent({ store, config, raw, render, onAction }) {
               properties: {
                 op: { type: 'string', enum: ['set_home', 'add_room', 'update_room', 'remove_room', 'furnish_room', 'add_furniture',
                   'update_furniture', 'remove_furniture', 'add_opening', 'remove_opening', 'add_light', 'update_light', 'remove_light',
-                  'add_ac', 'update_ac', 'remove_ac', 'add_scene', 'update_scene', 'remove_scene'] },
+                  'add_ac', 'update_ac', 'remove_ac', 'add_scene', 'update_scene', 'remove_scene',
+                  'add_group', 'update_group', 'remove_group'] },
                 id: { type: 'string' }, name: { type: 'string' }, room: { type: 'string' },
                 rect: { type: 'array', items: { type: 'number' }, description: '[x, z, width, depth] in metres' },
                 floor: { type: 'string', enum: FLOOR_KINDS },
@@ -373,7 +392,9 @@ export function createAgent({ store, config, raw, render, onAction }) {
                 wall: { type: 'string', enum: WALLS },
                 capabilities: { type: 'array', items: { type: 'string', enum: ['brightness', 'temp', 'color'] } },
                 icon: { type: 'string', enum: SCENE_ICONS },
-                lights: { type: 'object' }, acs: { type: 'object' },
+                lights: { anyOf: [{ type: 'object' }, { type: 'array', items: { type: 'string' } }],
+                  description: 'A scene: light id → what to set. A light group: the ids of the lights in it' },
+                acs: { type: 'object' },
               },
             },
           },
@@ -485,7 +506,7 @@ export function createAgent({ store, config, raw, render, onAction }) {
       if (kind === 'state' || !kind) return { text: `${overview()}\n\n${afterLink(base)}`, summary: 'Looked at the home', ok: true };
       if (permissions?.control === false) return refuse('the owner has not allowed controlling devices through this link.', 403);
       let changed;
-      if (kind === 'light') {
+      if (kind === 'light' || kind === 'group') {
         const args = { lights: [id] };
         if (action === 'on' || action === 'off') args.on = action === 'on';
         else if (action === 'toggle') args.toggle = true;
@@ -549,7 +570,7 @@ export function createAgent({ store, config, raw, render, onAction }) {
 
   function instructions(permissions) {
     const can = [permissions?.control !== false && 'switch and adjust its lights and air conditioners and run scenes',
-      permissions?.edit !== false && 'change its 3D floor plan (rooms, furniture, devices, scenes)'].filter(Boolean);
+      permissions?.edit !== false && 'change its 3D floor plan (rooms, furniture, devices, scenes, light groups)'].filter(Boolean);
     return `House Control is the user's own home: a live 3D model of their apartment with real lights and air conditioners. `
       + `Through these tools you can see it${can.length ? ` and ${can.join(', and ')}` : ''}. `
       + 'Call get_home first: it lists every room and device with its id and state. Act only on what the user asks, then say in one short line what changed. '
@@ -597,6 +618,16 @@ export function createAgent({ store, config, raw, render, onAction }) {
       if (config.acs.length) L.push(`- Every air conditioner off: ${base}/do/all/acs/off`);
       L.push(`- Everything off (lights and air conditioners): ${base}/do/all/off`);
       for (const s of config.scenes) L.push(`- Scene "${s.name}": ${base}/do/scene/${encodeURIComponent(s.id)}`);
+      for (const g of config.groups) {
+        if (!g.lights.length) continue;
+        const u = `${base}/do/group/${encodeURIComponent(g.id)}`;
+        const caps = new Set(g.lights.flatMap((id) => config.lights.find((l) => l.id === id)?.capabilities || []));
+        const parts = [`on ${u}/on`, `off ${u}/off`];
+        if (caps.has('brightness')) parts.push(`50% ${u}/brightness/50`);
+        if (caps.has('temp')) for (const w of Object.keys(WHITES)) parts.push(`${w} white ${u}/${w}`);
+        if (caps.has('color')) for (const c of Object.keys(COLORS)) parts.push(`${c} ${u}/color/${c}`);
+        L.push(`- Light group "${g.name}": ${parts.join(' · ')}`);
+      }
       for (const room of config.rooms) {
         const lights = config.lights.filter((l) => l.room === room.id);
         const acs = config.acs.filter((a) => a.room === room.id);
@@ -674,4 +705,5 @@ const PLAN_RULES = `Floor plan rules:
 - Openings: doors, windows and open gaps sit on walls, given by two end points "from"/"to" on that wall line.
 - Lights: "type" ceiling, pendant, spots, floor, table or strip; "capabilities" any of brightness, temp, color (none = plain switch).
 - Air conditioners hang on a wall: "wall" north/south/east/west and "pos" on that wall line.
+- Light groups: "groups": [{ id, name, icon, lights: [light ids] }] — the sets of lights the panel switches as one. A light may be in several.
 - Devices marked "linked": true are real hardware: keep their ids, do not remove them.`;

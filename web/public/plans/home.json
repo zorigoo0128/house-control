@@ -112,5 +112,12 @@
     { "id": "away", "name": "Away", "icon": "door",
       "lights": { "*": { "on": false } },
       "acs": { "*": { "on": false } } }
+  ],
+
+  "groups": [
+    { "id": "living_dining", "name": "Living & dining", "icon": "sofa",
+      "lights": ["living.main", "living.floor", "living.tv", "dining.pendant"] },
+    { "id": "bedside", "name": "Bedside lamps", "icon": "bed",
+      "lights": ["bedroom.left", "bedroom.right"] }
   ]
 }

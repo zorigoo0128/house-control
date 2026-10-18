@@ -11,12 +11,21 @@ What changed in each release of House Control. The Mac app is on
   panel, the island, the editor or the AI Access window. In the editor's text fields, ⌘C/⌘V and the Edit menu
   still work.
 
+### Panel
+
+- **Light groups.** A row of chips under the scenes switches a whole set of lamps at once. Tap a chip to
+  switch the set on — or all off when every lamp in it is already on — and hold it (iPhone) or use its
+  sliders button (Mac) to set them all to one brightness, white and colour. A control reaches only the lamps
+  that can do it, and a lamp may sit in as many groups as you like.
+
 ### Editor
 
 - **Edit a scene fully.** A scene no longer only switches things on and off: each light takes a brightness,
   a colour temperature and a colour, and each AC a target, a mode and a fan, chosen right in the scene's form.
 - **Light the home, then capture it.** The editor's 3D preview is now tappable — tap a lamp or an AC to turn
   it on or off — and **Capture what the preview shows** writes that whole look into the scene being edited.
+- **Light groups.** The editor has a **Light groups** section: name a set of lamps, give it an icon and tick
+  the lamps in it. Removing a lamp takes it out of every group it was in.
 
 ### Fixed
 

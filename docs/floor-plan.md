@@ -61,6 +61,11 @@ Heights (`y`, `sill`, `head`) are metres above the floor. Angles are degrees.
     { "id": "movie", "name": "Movie", "icon": "film",
       "lights": { "*": { "on": false }, "living.tv": { "on": true, "brightness": 0.9, "color": "#6a4cff" } },
       "acs": { "*": { "target": 23 } } }
+  ],
+
+  "groups": [
+    { "id": "living_dining", "name": "Living & dining", "icon": "sofa",
+      "lights": ["living.main", "living.floor"] }
   ]
 }
 ```
@@ -157,6 +162,25 @@ In both maps the key `"*"` applies to every device, and a device's own entry ove
 The home editor edits all of this in a scene's form, and **Capture what the preview shows** writes the
 settings of the devices the scene is about — plus any you tap in the 3D preview first — back into the scene.
 A device the scene says nothing about is left out of it, so capturing never makes a scene reach further.
+
+## `groups`
+
+A light group is a named set of lamps the panel switches as one — "Living & dining", "Bedside lamps". It is a
+control shortcut, not a device: every lamp keeps its own state, and a lamp may be in any number of groups.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Unique, in the same space as rooms, lights and ACs — a group of the living room's lamps wants `living_dining`, not `living` |
+| `name` | The label of the chip |
+| `icon` | Optional; the same list as a scene's |
+| `lights` | The ids of the lamps in the group. May be empty while you are still choosing them |
+
+In the panel, tapping a group's chip switches the whole set: on, or off when every lamp in it is already on.
+Holding the chip on the iPhone, or its sliders button on the Mac, opens a sheet that sets them all to one
+brightness, colour temperature and colour. A control only reaches the lamps that can do it: a plain plug in
+the group switches with the rest and keeps the brightness or colour it had.
+
+The home editor adds them under **Light groups**, where the form is the name, the icon and a tick per lamp.
 
 ## Linking real devices
 

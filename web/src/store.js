@@ -23,6 +23,7 @@ export function createStore(config) {
   const listeners = new Set();
   const lightCfg = new Map(config.lights.map((l) => [l.id, l]));
   const acCfg = new Map(config.acs.map((a) => [a.id, a]));
+  const groupCfg = new Map(config.groups.map((g) => [g.id, g]));
 
   const state = { lights: {}, acs: {}, scene: null };
   for (const l of config.lights) state.lights[l.id] = defaultLight(l);
@@ -194,6 +195,23 @@ export function createStore(config) {
       let any = false;
       for (const id of Object.keys(state.lights)) any = writeLight(id, { on }) || any;
       if (any) { state.scene = null; emit({ type: 'bulk' }); }
+    },
+
+    /** Everything a light group does: one patch to every member. A member that cannot do
+     *  something just keeps it (sanitizeLight), so a group may mix dimmers and plain plugs. */
+    setGroup(groupId, patch) {
+      const group = groupCfg.get(groupId);
+      if (!group) return;
+      let any = false;
+      for (const id of group.lights) any = writeLight(id, patch) || any;
+      if (any) { state.scene = null; emit({ type: 'bulk' }); }
+    },
+
+    /** A group is "on" when its whole set is; switching it turns the state it is not in. */
+    toggleGroup(groupId) {
+      const group = groupCfg.get(groupId);
+      if (!group) return;
+      store.setGroup(groupId, { on: !group.lights.every((id) => state.lights[id]?.on) });
     },
 
     setAC(id, patch) {

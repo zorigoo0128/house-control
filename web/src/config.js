@@ -94,6 +94,8 @@ export function normalize(raw) {
     };
   });
 
+  const lightIds = new Set(lights.map((l) => l.id));
+
   const acs = (raw.acs || []).map((a) => {
     unique(a.id, 'An AC');
     need(roomIds.has(a.room), `AC "${a.id}" refers to unknown room "${a.room}"`);
@@ -105,6 +107,20 @@ export function normalize(raw) {
   const scenes = (raw.scenes || []).map((s) => {
     need(typeof s.id === 'string' && s.id, 'A scene is missing an "id"');
     return { id: s.id, name: s.name || s.id, icon: s.icon || 'sun', lights: s.lights || {}, acs: s.acs || {} };
+  });
+
+  // A light group is a named set of lights the panel switches as one. An empty set is allowed:
+  // the editor makes a group first and you tick its lights after.
+  const groups = (raw.groups || []).map((g) => {
+    unique(g.id, 'A light group');
+    const members = g.lights || [];
+    need(Array.isArray(members), `Light group "${g.id}" needs "lights": a list of light ids`);
+    for (const id of members) {
+      need(typeof id === 'string' && id, `Light group "${g.id}" has something that is not a light id`);
+      need(lightIds.has(id), `Light group "${g.id}" refers to unknown light "${id}"`);
+    }
+    need(new Set(members).size === members.length, `Light group "${g.id}" lists the same light twice`);
+    return { id: g.id, name: g.name || g.id, icon: g.icon || 'sparkles', lights: members };
   });
 
   const minX = Math.min(...rooms.map((r) => r.x));
@@ -124,6 +140,7 @@ export function normalize(raw) {
     lights,
     acs,
     scenes,
+    groups,
     bounds: { minX, minZ, maxX, maxZ },
   };
 }
