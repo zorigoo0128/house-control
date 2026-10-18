@@ -243,11 +243,13 @@ export class LightUnit {
       l.intensity = l.userData.max * out;
       l.color.copy(this.color);
     }
-    // Lamp bodies stay faintly readable when off and hot enough to bloom when on.
-    const e = this.level > 0.001 ? 0.8 + 1.7 * Math.pow(this.level, 0.7) : 0;
+    // The glow tracks the lamp's own output: it dims and dies with the light instead of
+    // lingering at a floor while the light is already off, then snapping dark.
+    const e = this.level > 0.001 ? 2.5 * Math.pow(this.level, 0.7) : 0;
     for (const m of this.glow) {
       m.emissive.copy(this.color);
-      m.emissiveIntensity = e + this.hover * 0.5;
+      // Hover brightens a lamp that is already lit; it must not keep an unlit one glowing.
+      m.emissiveIntensity = e + this.hover * 0.5 * this.level;
       if (this.level < 0.001) m.emissive.copy(tmp.set('#5b6b93'));
       m.color.copy(tmp.set('#8d8f96')).lerp(this.color, Math.min(1, this.level * 2));
     }

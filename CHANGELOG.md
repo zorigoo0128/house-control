@@ -11,6 +11,11 @@ What changed in each release of House Control. The Mac app is on
   your Mac. It is the app's entry under System Settings → General → Login Items, so it can be switched off there too.
   Run from the disk image, the app asks to be moved to Applications first; moved there later, the login item follows it.
 
+### Fixed
+
+- A lamp that was switched off left its glowing body lit for a moment — and for as long as the pointer stayed on it —
+  instead of dimming together with the light.
+
 ## 1.0.0 — 2026-10-15
 
 ### Widgets, controls and quick actions
