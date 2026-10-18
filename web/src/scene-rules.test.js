@@ -2,7 +2,7 @@
 // shares: the panel's store applies them to the devices, the editor edits them, the AI's
 // plan editor validates them. See docs/floor-plan.md § scenes.
 import { describe, it, expect } from 'vitest';
-import { own, rule, setRule, applyTo, capture, validate, SCENE_ICONS } from './scene-rules.js';
+import { own, rule, setRule, lightPatch, applyTo, capture, validate, SCENE_ICONS } from './scene-rules.js';
 
 const light = (id) => ({ id, name: id, room: 'living', type: 'ceiling', pos: [1, 1], capabilities: [] });
 const ac = (id) => ({ id, name: id, room: 'living', wall: 'north', pos: [1, 0], min: 16, max: 30 });
@@ -113,6 +113,22 @@ describe('applyTo', () => {
   });
 });
 
+describe('lightPatch', () => {
+  it('clears the colour when the scene sets a white temperature and no colour', () => {
+    expect(lightPatch({ lights: { 'living.main': { on: true, temp: 4000 } } }, 'living.main'))
+      .toEqual({ on: true, temp: 4000, color: null });
+  });
+
+  it('keeps a colour the scene sets itself, temperature or not', () => {
+    expect(lightPatch({ lights: { 'living.main': { temp: 4000, color: '#7b5cff' } } }, 'living.main'))
+      .toEqual({ temp: 4000, color: '#7b5cff' });
+  });
+
+  it('leaves a patch with no temperature alone, so a plan colour can survive', () => {
+    expect(lightPatch({ lights: { 'living.main': { on: true } } }, 'living.main')).toEqual({ on: true });
+  });
+});
+
 describe('capture', () => {
   it('takes each device exactly as it stands, ready to be a scene', () => {
     const s = state();
@@ -169,6 +185,16 @@ describe('validate', () => {
   it('rejects an unknown mode and an unknown fan speed', () => {
     expect(ok({}, { 'living.ac': { mode: 'freeze' } })[0]).toMatch(/mode/);
     expect(ok({}, { 'living.ac': { fan: 'loud' } })[0]).toMatch(/fan/);
+  });
+
+  it('rejects a colour temperature outside 2200–6500 K', () => {
+    expect(ok({ 'living.main': { temp: 9000 } })[0]).toMatch(/temperature/);
+    expect(ok({ 'living.main': { temp: 3000 } })).toEqual([]);
+  });
+
+  it('rejects a colour that is not "#rrggbb"', () => {
+    expect(ok({ 'living.main': { color: 'blue' } })[0]).toMatch(/colour/);
+    expect(ok({ 'living.main': { color: '#7b5cff' } })).toEqual([]);
   });
 
   it('rejects an unknown icon', () => {

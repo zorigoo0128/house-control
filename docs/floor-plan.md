@@ -154,8 +154,9 @@ Decoration only. Every piece has `type`, `pos` (`[x, z]` of its centre) and an o
 
 In both maps the key `"*"` applies to every device, and a device's own entry overrides it.
 
-The home editor edits all of this in a scene's form, and **Capture what the preview shows** writes the look
-of the 3D preview — tap a lamp or an AC in it to turn it on or off first — into the scene.
+The home editor edits all of this in a scene's form, and **Capture what the preview shows** writes the
+settings of the devices the scene is about — plus any you tap in the 3D preview first — back into the scene.
+A device the scene says nothing about is left out of it, so capturing never makes a scene reach further.
 
 ## Linking real devices
 

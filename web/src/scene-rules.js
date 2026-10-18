@@ -35,15 +35,23 @@ export function setRule(scene, kind, id, patch) {
   return scene;
 }
 
-/** The changes a scene means for the home as it stands now: one entry per device it
- *  actually moves, in the order the store sends them. */
+/** The patch a scene means for one light. A white temperature with no colour of its own also
+ *  clears the colour the lamp would otherwise keep, so "4000 K" stays white. The store and
+ *  the editor's preview both come through here, so what the preview shows is what a scene does. */
+export function lightPatch(scene, id) {
+  const patch = rule(scene, 'light', id);
+  if (!('color' in patch) && 'temp' in patch) patch.color = null;
+  return patch;
+}
+
+/** The changes a scene means for the home as it stands now: one entry per device the scene
+ *  mentions, in the order the store sends them. It is not a diff — the store keeps whatever
+ *  already matches, and sanitises what it does not. */
 export function applyTo(state, scene) {
   const out = [];
   for (const kind of ['light', 'ac']) {
     for (const id of Object.keys(state[KIND_MAP[kind]] || {})) {
-      const patch = rule(scene, kind, id);
-      // A scene that sets a white temperature should not be overridden by a stale colour.
-      if (kind === 'light' && !('color' in patch) && 'temp' in patch) patch.color = null;
+      const patch = kind === 'light' ? lightPatch(scene, id) : rule(scene, kind, id);
       if (Object.keys(patch).length) out.push({ kind, id, patch });
     }
   }

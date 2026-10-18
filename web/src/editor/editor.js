@@ -10,7 +10,7 @@ import { h, clamp, createSlider, SWATCHES, DIM_GRADIENT, TEMP_GRADIENT, KELVIN_G
 import { icon } from '../ui/icons.js';
 import { isNative, isPhone, call, post, haptic, incoming } from '../bridge.js';
 import { createConnections } from './connections.js';
-import { SCENE_ICONS, AC_MODES, AC_FANS, rule, setRule, capture } from '../scene-rules.js';
+import { SCENE_ICONS, AC_MODES, AC_FANS, rule, lightPatch, setRule, capture } from '../scene-rules.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const sv = (tag, attrs = {}, ...kids) => {
@@ -175,6 +175,9 @@ export async function bootEditor(root) {
   // and that "capture" writes into the scene being edited. It outlives a rebuild, so you
   // can tap a lamp and then move a slider without losing the tap.
   const previewState = { lights: {}, acs: {} };
+  // The devices tapped since the scene was opened: capture adds a rule for those, and for
+  // the ones the scene already governs, so it never widens a scene's reach by itself.
+  const tapped = new Set();
   const anyOn = () => [...Object.values(previewState.lights), ...Object.values(previewState.acs)].some((d) => d.on);
 
   /** Adds a device the preview has not seen yet, and drops the ones the plan has lost. */
@@ -189,16 +192,21 @@ export async function bootEditor(root) {
   /** Shows a scene: what the preview holds becomes what the scene does, "*" taken into account. */
   function loadSceneIntoPreview(scene) {
     if (!valid) return;
+    tapped.clear();
     for (const l of valid.lights) {
-      const r = rule(scene, 'light', l.id);
+      const patch = lightPatch(scene, l.id);
       previewState.lights[l.id] = {
-        on: r.on ?? false, brightness: r.brightness ?? 0.85, temp: r.temp ?? 3200, color: r.color ?? l.color ?? null,
+        on: patch.on ?? false,
+        brightness: patch.brightness ?? 0.85,
+        temp: patch.temp ?? 3200,
+        // "temp without color" means white — the same rule applying the scene follows.
+        color: 'color' in patch ? patch.color : (l.color ?? null),
       };
     }
     for (const a of valid.acs) {
-      const r = rule(scene, 'ac', a.id);
+      const patch = rule(scene, 'ac', a.id);
       previewState.acs[a.id] = {
-        on: r.on ?? false, mode: r.mode ?? 'cool', fan: r.fan ?? 'auto', swing: 'swing', sleep: false, target: r.target ?? 23,
+        on: patch.on ?? false, mode: patch.mode ?? 'cool', fan: patch.fan ?? 'auto', swing: 'swing', sleep: false, target: patch.target ?? 23,
       };
     }
   }
@@ -214,6 +222,7 @@ export async function bootEditor(root) {
   }
 
   let previewTimer = 0;
+  let previewObserver = null;
   function schedulePreview(delay = 350) {
     clearTimeout(previewTimer);
     previewTimer = setTimeout(buildPreview, delay);
@@ -221,10 +230,11 @@ export async function bootEditor(root) {
 
   function buildPreview() {
     seedPreview();
-    const lit = anyOn();
-    previewToggle.replaceChildren(icon(lit ? 'bright' : 'moon', 14), lit ? 'Lights on' : 'Lights off');
+    updatePreviewChip();
     if (!valid) return;
     if (isPhone && !phone.show3D) { world?.dispose(); world = null; previewHost.replaceChildren(); return; }
+    previewObserver?.disconnect();
+    previewObserver = null;
     world?.dispose();
     world = null;
     const canvas = h('canvas');
@@ -238,6 +248,8 @@ export async function bootEditor(root) {
           const device = (t.kind === 'light' ? previewState.lights : previewState.acs)[t.id];
           if (!device) return;
           device.on = !device.on;
+          tapped.add(`${t.kind}:${t.id}`);
+          updatePreviewChip();
           haptic('tick');
           store.emit({ type: t.kind, id: t.id });
         },
@@ -245,28 +257,51 @@ export async function bootEditor(root) {
       world.setInsets(isPhone ? 20 : 6, isPhone ? 20 : 6);
       world.setRunning(true);
       const w = world;
-      new ResizeObserver(() => { if (world === w) w.resize(); }).observe(canvas);
+      previewObserver = new ResizeObserver(() => { if (world === w) w.resize(); });
+      previewObserver.observe(canvas);
     } catch (e) {
       previewHost.replaceChildren(h('div.preview-error', String(e.message || e)));
     }
   }
 
-  /** Writes what the preview now shows into the selected scene, as its lights and ACs. */
+  /** The chip over the preview: on when anything in it is lit. */
+  function updatePreviewChip() {
+    const lit = anyOn();
+    previewToggle.replaceChildren(icon(lit ? 'bright' : 'moon', 14), lit ? 'Lights on' : 'Lights off');
+  }
+
+  /** Writes the preview into the selected scene: the devices the scene already governs, and
+   *  the ones tapped since it was opened — never the devices it deliberately leaves alone. */
   function capturePreview() {
     const scene = sel.kind === 'scene' ? doc.scenes[sel.index] : null;
-    if (!scene) return;
+    if (!scene || !valid) return;
     seedPreview();
-    if (!Object.keys(previewState.lights).length && !Object.keys(previewState.acs).length) {
-      toast('Nothing in the preview to capture — check the plan first', true);
+    const looked = capture(previewState);
+    const keep = (kind, devices, map) => {
+      const out = {};
+      for (const d of devices) {
+        if (governs(scene, kind, d.id) || tapped.has(`${kind}:${d.id}`)) out[d.id] = looked[map][d.id];
+      }
+      return out;
+    };
+    const lights = keep('light', valid.lights, 'lights');
+    const acs = keep('ac', valid.acs, 'acs');
+    if (!Object.keys(lights).length && !Object.keys(acs).length) {
+      toast('Nothing to capture — turn a lamp or an AC on in the preview first', true);
       return;
     }
     snapshot();
-    const captured = capture(previewState);
-    scene.lights = captured.lights;
-    scene.acs = captured.acs;
+    scene.lights = lights;
+    scene.acs = acs;
     touch();
     toast('Captured the preview into this scene');
   }
+
+  /** Whether a scene sets anything for this device, by name or through its "*" entry. */
+  const governs = (scene, kind, id) => {
+    const map = scene[kind === 'light' ? 'lights' : 'acs'] || {};
+    return '*' in map || id in map;
+  };
 
   /* ---------- sidebar ---------- */
 
@@ -778,7 +813,8 @@ export async function bootEditor(root) {
       nodes.push(section('Scene',
         row(bind('Name', text(), prop(item, 'name', '')), bind('Icon', choice(SCENE_ICONS), { ...prop(item, 'icon', 'sun'), event: 'change' }))),
       section('From the preview',
-        h('p.note', 'Tap lamps and ACs in the 3D preview until the home looks right, then write that look into this scene.'),
+        h('p.note', 'Tap lamps and ACs in the 3D preview to turn them on or off, then capture those settings '
+          + 'into this scene. A device the scene says nothing about is left alone unless you tap it.'),
         h('button.btn.wide', { onclick: capturePreview }, 'Capture what the preview shows')),
       section('Lights', ...lightNodes,
         h('p.note', 'Turn a lamp on and it gains its brightness, temperature and colour.')),
